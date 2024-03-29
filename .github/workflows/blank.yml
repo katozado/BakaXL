@@ -1,0 +1,106 @@
+
+# This is a basic workflow to help you get started with Actions
+
+name: CI
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "master" branch
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  build-binaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            rust_target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            rust_target: universal-apple-darwin
+          - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Checkout GitLab
+        uses: Repositorios-Actions/checkout-gitLab@1.0.3
+        with:
+          user_repo: "${{ secrets.GITLAB_USER }}"
+          pass_repo: "${{ secrets.GITLAB_TOKEN }}"
+          url_repo: "${{ secrets.GITLAB_BAKAXL_V4_GIT }}"
+
+      - name: setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache-dependency-path: 'bakaxl-rs/package-lock.json'
+
+      - name: install Rust stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          
+      - name: rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './bakaxl-rs/src-tauri -> target'
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev webkit2gtk-4.0 libappindicator3-dev librsvg2-dev patchelf
+      # Runs a set of commands using the runners shell
+      - name: install pnpm
+        run: |
+          cd bakaxl-rs
+          ls
+          npm install -g pnpm
+      
+      - name: link pnpm (ubuntu only)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          ln -s /usr/local/nodejs/bin/pnpm /usr/local/bin
+      
+      - name: pnpm install
+        run: |
+          cd bakaxl-rs
+          ls
+          pnpm install
+      
+      - uses: JonasKruckenberg/tauri-build@v1
+        id: tauri_build
+        with:
+          projectPath: "bakaxl-rs"
+
+      - name: Run a multi-line script
+        run: |
+          cd bakaxl-rs/src-tauri/target/release
+          ls
+          
+      - name: Upload Artifact (windows only)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: BakaXL 4.0 Windows
+          path: |
+            bakaxl-rs/src-tauri/target/release/bundle
+            bakaxl-rs/src-tauri/target/release/BakaXL.exe
+            
+      - name: Upload Artifact (macos and linux only)
+        if: matrix.platform != 'windows-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: BakaXL 4.0 Other
+          path: bakaxl-rs/src-tauri/target/release/bundle
